@@ -243,10 +243,10 @@ function webpackCompilerFactory(opt) {
   //  pivot: './build/client/pivot-entry.js'
   //}
 
-  return webpack({
+  var config = Object.assign({
     context: cwd,
     entry: entry,
-    target: opt.target || 'web',
+    target: 'web',
     output: {
       path: path.join(cwd, "/build/public"),
       filename: "[name].js",
@@ -270,7 +270,9 @@ function webpackCompilerFactory(opt) {
         { convertPathData: false }
       ]
     }
-  });
+  }, opt.webpack || {});
+
+  return webpack(config);
 }
 
 exports.taskClientPack = function(opt) {
