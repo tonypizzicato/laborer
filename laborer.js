@@ -102,8 +102,6 @@ exports.taskClientTypeScript = function(opt) {
         {
           typescript: typescript,
           noImplicitAny: true,
-          noFallthroughCasesInSwitch: true,
-          noImplicitReturns: true,
           noEmitOnError: true,
           target: 'ES5',
           module: 'commonjs',
@@ -151,13 +149,11 @@ exports.taskServerTypeScript = function(opt) {
     var typeFiles = gulp.src(['./typings/**/*.d.ts']);
 
     var compiled = merge(sourceFiles, typeFiles)
-      //.pipe(sourcemaps.init())
+    //.pipe(sourcemaps.init())
       .pipe(tsc(
         {
           typescript: typescript,
           noImplicitAny: true,
-          noFallthroughCasesInSwitch: true,
-          noImplicitReturns: true,
           noEmitOnError: true,
           target: 'ES5',
           module: 'commonjs',
