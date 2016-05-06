@@ -1,6 +1,6 @@
 'use strict';
 
-var fs = require('fs');
+var fs = require('graceful-fs');
 var gutil = require('gulp-util');
 var through = require('through2');
 
@@ -28,7 +28,11 @@ exports.writeErrors = function(path, errorLines) {
   } else {
     data = '';
   }
-  fs.writeFileSync(path, data, 'utf8');
+  try {
+    fs.writeFileSync(path, data, 'utf8');
+  } catch (e) {
+    console.log('Could not write errors because:', e.message);
+  }
 };
 
 exports.tscLintReporterFactory = function(opt) {

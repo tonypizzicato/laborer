@@ -1,24 +1,17 @@
 'use strict';
 
-var fs = require('fs');
+var fs = require('graceful-fs');
 var path = require('path');
 
 var gulp = require('gulp');
-var gutil = require("gulp-util");
-var sass = require('gulp-sass');
-var sassLint = require('gulp-sass-lint');
-var postcss = require('gulp-postcss');
+var $ = require('gulp-load-plugins')();
+
 var autoprefixer = require('autoprefixer');
-var tsc = require('gulp-typescript');
-var tslint = require('gulp-tslint');
-var sourcemaps = require('gulp-sourcemaps');
 
 var merge = require('merge-stream');
-var debug = require('gulp-debug');
 var del = require('del');
 var typescript = require('typescript');
 
-var mocha = require('gulp-mocha');
 
 var tsLintConfig = require('./tslint-rules');
 var sassLintRules = require('./sasslint-rules');
@@ -26,21 +19,47 @@ var gr = require('./gulp-reporters');
 
 var webpack = require("webpack");
 
+
+// Modifiers ==============
+
+var globalShowStats = false;
+
+exports.showStats = function() {
+  globalShowStats = true;
+};
+
+exports.hideStats = function() {
+  globalShowStats = false;
+};
+
+
+var globalFailOnError = false;
+
+exports.failOnError = function() {
+  globalFailOnError = true;
+};
+
+
+// TASKS ==============
+
 exports.taskStyle = function(opt) {
-  var opt = opt || {};
+  opt = opt || {};
   var rules = opt.rules || sassLintRules;
+
+  $.sass.compiler = require('node-sass');
+
   return function() {
     var errorTexts = [];
 
     return gulp.src('./src/client/**/*.scss')
-      .pipe(sassLint({ rules: rules }))
+      .pipe($.sassLint({ rules: rules }))
       .pipe(gr.sassLintReporterFactory({ errorTexts: errorTexts }))
-      .pipe(sass({
+      .pipe($.sass({
         outputStyle: 'compressed'
       }).on('error', gr.sassErrorFactory({
         errorTexts: errorTexts
       })))
-      .pipe(postcss([
+      .pipe($.postcss([
         autoprefixer({
           browsers: ['> 1%', 'last 3 versions', 'Firefox ESR', 'Opera 12.1'],
           remove: false // If you have no legacy code, this option will make Autoprefixer about 10% faster.
@@ -49,6 +68,7 @@ exports.taskStyle = function(opt) {
       .pipe(gulp.dest('./build/client'))
       .on('finish', function() {
         gr.writeErrors('./webstorm/errors', errorTexts);
+        if (globalFailOnError && errorTexts.length) process.exit(1);
       });
   };
 };
@@ -73,8 +93,21 @@ exports.taskHtml = function() {
 
 
 exports.taskClientTypeScript = function(opt) {
-  var opt = opt || {};
+  opt = opt || {};
   var declaration = opt.declaration || false;
+
+  var tsProject = $.typescript.createProject({
+    typescript: typescript,
+    noImplicitAny: true,
+    noFallthroughCasesInSwitch: true,
+    noImplicitReturns: true,
+    noEmitOnError: true,
+    target: 'ES5',
+    module: 'commonjs',
+    declaration: declaration,
+    jsx: 'react'
+  });
+
   return function() {
     var errorTexts = [];
 
@@ -83,10 +116,9 @@ exports.taskClientTypeScript = function(opt) {
     }
 
     var sourceFiles = gulp.src(['./src/{client,common}/**/*.{ts,tsx}'])
-      .pipe(tslint({
-        configuration: tsLintConfig
-      }))
-      .pipe(tslint.report(
+      .pipe($.cached('client'))
+      .pipe($.tslint({configuration: tsLintConfig}))
+      .pipe($.tslint.report(
         gr.tscLintReporterFactory({
           errorTexts: errorTexts,
           fixPath: fixPath
@@ -97,25 +129,18 @@ exports.taskClientTypeScript = function(opt) {
     var typeFiles = gulp.src(['./typings/**/*.d.ts']);
 
     var compiled = merge(sourceFiles, typeFiles)
-    //.pipe(sourcemaps.init())
-      .pipe(tsc(
-        {
-          typescript: typescript,
-          noImplicitAny: true,
-          noEmitOnError: true,
-          target: 'ES5',
-          module: 'commonjs',
-          declaration: declaration,
-          jsx: 'react'
-        },
+      .pipe($.typescript(
+        tsProject,
         undefined,
         gr.tscReporterFactory({
           errorTexts: errorTexts,
           fixPath: fixPath,
-          onFinish: function() { gr.writeErrors('./webstorm/errors', errorTexts); }
+          onFinish: function() {
+            gr.writeErrors('./webstorm/errors', errorTexts);
+            if (globalFailOnError && errorTexts.length) process.exit(1);
+          }
         })
       ));
-    //.pipe(sourcemaps.write('.', { includeContent: false, sourceRoot: '../client' }))
 
     if (declaration) {
       return merge([
@@ -130,16 +155,27 @@ exports.taskClientTypeScript = function(opt) {
 
 
 exports.taskServerTypeScript = function(opt) {
-  var opt = opt || {};
+  opt = opt || {};
   var declaration = opt.declaration || false;
+
+  var tsProject = $.typescript.createProject({
+    typescript: typescript,
+    noImplicitAny: true,
+    noFallthroughCasesInSwitch: true,
+    noImplicitReturns: true,
+    noEmitOnError: true,
+    target: 'ES5',
+    module: 'commonjs',
+    declaration: declaration
+  });
+
   return function() {
     var errorTexts = [];
 
     var sourceFiles = gulp.src(['./src/{server,common}/**/*.ts'])
-      .pipe(tslint({
-        configuration: tsLintConfig
-      }))
-      .pipe(tslint.report(
+      .pipe($.cached('server'))
+      .pipe($.tslint({configuration: tsLintConfig}))
+      .pipe($.tslint.report(
         gr.tscLintReporterFactory({
           errorTexts: errorTexts
         }),
@@ -149,26 +185,17 @@ exports.taskServerTypeScript = function(opt) {
     var typeFiles = gulp.src(['./typings/**/*.d.ts']);
 
     var compiled = merge(sourceFiles, typeFiles)
-    //.pipe(sourcemaps.init())
-      .pipe(tsc(
-        {
-          typescript: typescript,
-          noImplicitAny: true,
-          noEmitOnError: true,
-          target: 'ES5',
-          module: 'commonjs',
-          declaration: declaration
-        },
+      .pipe($.typescript(
+        tsProject,
         undefined,
         gr.tscReporterFactory({
           errorTexts: errorTexts,
-          onFinish: function() { gr.writeErrors('./webstorm/errors', errorTexts); }
+          onFinish: function() {
+            gr.writeErrors('./webstorm/errors', errorTexts);
+            if (globalFailOnError && errorTexts.length) process.exit(1);
+          }
         })
       ));
-      //.pipe(sourcemaps.write('.', {
-      //  includeContent: false,
-      //  sourceRoot: '../../src/server'
-      //}));
 
     if (declaration) {
       return merge([
@@ -182,48 +209,29 @@ exports.taskServerTypeScript = function(opt) {
 };
 
 
-var mochaParams = {
-  reporter: 'spec'
+var generateTester = function(path, parameters) {
+  return function() {
+    return gulp.src(path, {read: false})
+      // gulp-mocha needs filepaths so you can't have any plugins before it
+      .pipe($.mocha(parameters));
+  };
+}
+
+exports.taskCommonTest = function(parameters) {
+  return generateTester('./build/common/**/*.mocha.js', parameters);
 };
 
-exports.taskUtilsTest = function() {
-  return function() {
-    return gulp.src('./build/utils/**/*.mocha.js', {read: false})
-      // gulp-mocha needs filepaths so you can't have any plugins before it
-      .pipe(mocha(mochaParams));
-  };
+exports.taskClientTest = function(parameters) {
+  return generateTester('./build/client/**/*.mocha.js', parameters);
 };
 
-
-exports.taskModelsTest = function() {
-  return function() {
-    return gulp.src('./build/models/**/*.mocha.js', {read: false})
-      // gulp-mocha needs filepaths so you can't have any plugins before it
-      .pipe(mocha(mochaParams));
-  };
-};
-
-
-exports.taskClientTest = function() {
-  return function() {
-    return gulp.src('./build/client/**/*.mocha.js', {read: false})
-      // gulp-mocha needs filepaths so you can't have any plugins before it
-      .pipe(mocha(mochaParams));
-  };
-};
-
-
-exports.taskServerTest = function() {
-  return function() {
-    return gulp.src('./build/server/**/*.mocha.js', {read: false})
-      // gulp-mocha needs filepaths so you can't have any plugins before it
-      .pipe(mocha(mochaParams));
-  };
+exports.taskServerTest = function(parameters) {
+  return generateTester('./build/server/**/*.mocha.js', parameters);
 };
 
 
 function webpackCompilerFactory(opt) {
-  var opt = opt || {};
+  opt = opt || {};
   var cwd = process.cwd();
   var files = fs.readdirSync(path.join(cwd, '/build/client'));
 
@@ -271,20 +279,38 @@ function webpackCompilerFactory(opt) {
   return webpack(config);
 }
 
+
+function webpackResultHandler(showStats, err, stats) {
+  var errorTexts = [];
+  if (err) {
+    errorTexts.push('Fatal webpack error: ' + err.message);
+  } else {
+    var jsonStats = stats.toJson();
+
+    if(jsonStats.errors.length > 0 || jsonStats.warnings.length > 0) {
+      errorTexts = jsonStats.errors.concat(jsonStats.warnings);
+    }
+
+    if (showStats || globalShowStats) {
+      $.util.log("[webpack]", stats.toString({
+        colors: true
+      }));
+    }
+  }
+
+  if (errorTexts.length) console.error(errorTexts.join('\n'));
+  gr.writeErrors('./webstorm/errors', errorTexts);
+  if (globalFailOnError && errorTexts.length) process.exit(1);
+}
+
 exports.taskClientPack = function(opt) {
-  var opt = opt || {};
-  var showStats = opt.showStats || false;
+  opt = opt || {};
+  var showStats = opt.showStats;
   return function(callback) {
     var webpackCompiler = webpackCompilerFactory(opt);
     if (!webpackCompiler) return callback();
     webpackCompiler.run(function(err, stats) {
-      if (err) throw new gutil.PluginError("webpack", err);
-      //if (stats.hasErrors) throw new gutil.PluginError("webpack error", "there were errors");
-      if (showStats) {
-        gutil.log("[webpack]", stats.toString({
-          colors: true
-        }));
-      }
+      webpackResultHandler(showStats, err, stats);
       callback();
     });
   };
@@ -292,21 +318,16 @@ exports.taskClientPack = function(opt) {
 
 
 exports.clientPackWatch = function(opt) {
-  var opt = opt || {};
-  var showStats = opt.showStats || false;
+  opt = opt || {};
+  var showStats = opt.showStats;
   var webpackCompiler = webpackCompilerFactory(opt);
   if (!webpackCompiler) throw new Error('no entry files found');
   webpackCompiler.watch({ // watch options:
     aggregateTimeout: 300 // wait so long for more changes
     //poll: true // use polling instead of native watchers
   }, function(err, stats) {
-    if (err) throw new gutil.PluginError("webpack", err);
-    //if (stats.hasErrors) throw new gutil.PluginError("webpack error", "there were errors");
-    if (showStats) {
-      gutil.log("[webpack watch]", stats.toString({
-        colors: true
-      }));
-    }
+    webpackResultHandler(showStats, err, stats);
+    $.util.log("[webpack]", 'done');
   });
 };
 
