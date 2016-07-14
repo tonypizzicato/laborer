@@ -18,7 +18,7 @@ module.exports = {
   "mixin-name-format": [1, {"allow-leading-underscore": true, "convention": "hyphenatedlowercase"}],
   "mixins-before-declarations": 1,
   "nesting-depth": [1, {"max-depth": 6}],
-  "no-color-keyword": 1,
+  "no-color-keywords": 1,
   "no-color-literals": 0,
   "no-css-comments": 0,
   "no-debug": 1,
